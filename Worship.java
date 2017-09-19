@@ -6,19 +6,22 @@ import java.util.*;
 
 public class Worship {
 
-    Map<String, Entity> mEntities = new HashMap<>();
-    //List<Map<String, String>> mEntityBuffer = new LinkedList<>();
-    Map<String, Map<String, String>> mEntityBuffer = new HashMap<>();
+    private Map<String, Entity> mEntities = new HashMap<>();
+    private Map<String, Map<String, String>> mEntityBuffer = new HashMap<>();
 
-    String mCurrentEntity;
-    int mNumOfLines = 0;
+    private String mCurrentEntity;
+    private int mNumOfLines = 0;
 
     public static void main(String[] args) throws Exception {
         Worship w = new Worship();
         w.readFile();
+
+        System.out.println("Read file done");
+
+        w.traverse();
     }
 
-    private void readFile() throws java.io.IOException {
+    public void readFile() throws java.io.IOException {
         File file = new File("RulesMD.ini");
 
         if (!file.exists()) {
@@ -36,6 +39,7 @@ public class Worship {
             this.parseLine(line);
         }
 
+        storeEntity();
         reader.close();
     }
 
@@ -52,18 +56,18 @@ public class Worship {
             }
 
             // Find a new entity. Store buffered lines first
-
+            String oldEntity = mCurrentEntity;
+            storeEntity();
 
             // Move to the new entity
             mCurrentEntity = line.substring(1, rightBracket);
 
-            System.out.println("Get an entity: " + mCurrentEntity);
+            //System.out.printf("Moving from [%s] to [%s]\n", oldEntity, mCurrentEntity);
         }
         else if ((equalSign = line.indexOf('=')) > 0) {
             String key = line.substring(0, equalSign).trim();
             String value = line.substring(equalSign + 1, line.length()).trim();
-            System.out.println("Line: " + mNumOfLines + ". Key: " + key + ", value: " + value);
-
+            //System.out.println("Line: " + mNumOfLines + ". Key: " + key + ", value: " + value);
 
             if (!mEntityBuffer.containsKey(mCurrentEntity)) {
                 mEntityBuffer.put(mCurrentEntity, new HashMap<String, String>());
@@ -73,110 +77,114 @@ public class Worship {
         }
     }
 
+    private void storeEntity() {
+        Map<String, String> currentBuffer = mEntityBuffer.get(mCurrentEntity);
+        //System.out.printf("Storing [%s]\n", mCurrentEntity);
+
+        if (currentBuffer == null)
+            return;
+
+        for (String key: currentBuffer.keySet()) {
+            String value = currentBuffer.get(key);
+            //System.out.printf("%s = %s\n", key, value);
+
+            if (key.equalsIgnoreCase("strength")) {
+                Unit unit = new Unit();
+                unit.title = mCurrentEntity;
+                unit.name = currentBuffer.get("Name");
+                unit.strength = value;
+                unit.primary = currentBuffer.get("Primary");
+                unit.secondary = currentBuffer.get("Secondary");
+                if (unit.name == null) {
+                    System.out.printf("Unit [%s] has no name\n", mCurrentEntity);
+                    unit.name = unit.title;
+                }
+
+                mEntities.put(mCurrentEntity, unit);
+            }
+            else if (key.equalsIgnoreCase("warhead")) {
+                Weapon weapon = new Weapon();
+                weapon.title = mCurrentEntity;
+                weapon.warhead =  currentBuffer.get("Warhead");
+                if (weapon.warhead == null) {
+                    System.out.printf("Weapon [%s] has no warhead\n", mCurrentEntity);
+                    throw new NullPointerException(mCurrentEntity);
+                }
+                mEntities.put(mCurrentEntity, weapon);
+            }
+            else if (key.equalsIgnoreCase("verses")) {
+                Warhead warhead = new Warhead();
+                warhead.title = mCurrentEntity;
+                warhead.verses = currentBuffer.get("Verses");
+                if (warhead.verses == null) {
+                    System.out.printf("Warhead [%s] has no verses\n", mCurrentEntity);
+                    throw new NullPointerException(mCurrentEntity);
+                }
+                mEntities.put(mCurrentEntity, warhead);
+            }
+        }
+    }
+
+    private void traverse() {
+        for (String title: mEntities.keySet()) {
+            Entity entity = mEntities.get(title);
+            if (!(entity instanceof Unit))
+                continue;
+
+            Unit unit = (Unit)entity;
+
+            Weapon primary = (Weapon)mEntities.get(unit.primary);
+            Weapon secondary = (Weapon)mEntities.get(unit.secondary);
+
+            if (primary != null) {
+                if (secondary != null) {
+                    System.out.printf("'%s' has primary weapon [%s] and secondary weapon [%s]\n",
+                            unit.name, primary.title, secondary.title);
+                }
+                else{
+                    System.out.printf("'%s' has primary weapon [%s]\n", unit.name, primary.title);
+                }
+            }
+            else {
+                //System.out.printf("'%s' has no primary weapon\n", unit.name);
+                if (secondary != null) {
+                    System.out.printf("'%s' has no primary weapon but secondary weapon [%s]\n", unit.name, unit.secondary);
+                    throw new IllegalArgumentException();
+                }
+            }
+
+            //System.out.printf("Unit [%s] has strength %s\n", name, unit.strength);
+        }
+    }
+
     private String removeComments(String line) {
-        int semicolun = line.indexOf(';');
+        int semicolon = line.indexOf(';');
         String effective;
-        if (semicolun > 0) {
-            effective = line.substring(0, semicolun).trim();
+        if (semicolon >= 0) {
+            effective = line.substring(0, semicolon).trim();
         }
         else {
             effective = line.trim();
         }
         return effective;
     }
-
-    public static void oldMain(String[] args) throws Exception {
-
-        File file = new File("RulesMD.ini");
-        assert(file.exists());
-
-        BufferedReader reader = new BufferedReader(new FileReader(file));
-        String line;
-        int lineNum = 0;
-
-        try {
-            while ((line = reader.readLine()) != null) {
-                lineNum++;
-                line = line.trim().toLowerCase();
-
-                if (line.startsWith("verses=")) {
-                    int equalSign = line.indexOf('=');
-                    int semicolumn = line.indexOf(';');
-                    String effective;
-
-                    if (semicolumn > 0) {
-                        effective = line.substring(equalSign + 1, semicolumn).trim();
-                    }
-                    else {
-                        effective = line.substring(equalSign + 1).trim();
-                    }
-                    String[] verses = effective.split(",");
-                    assert(verses.length == 9);
-
-                    int [] damages = new int[9];
-                    for (int i = 0; i < 9; i++) {
-                        int percentSign = verses[i].indexOf("%");
-                        if (percentSign > 0) {
-                            damages[i] = Integer.valueOf(verses[i].substring(0, percentSign));
-                        }
-                        else {
-                            damages[i] = Integer.valueOf(verses[i]);
-                        }
-                    }
-                    int heavy = damages[5];
-                    int medium = damages[4];
-                    int light = damages[3];
-                    if (heavy > medium) {
-                        System.out.printf("---- Heavy %d takes more damages than medium %d at line %d\n",
-                                heavy, medium, lineNum);
-                    }
-                    else if (heavy < medium) {
-                        System.out.printf("++++ Heavy %d takes less damages than medium %d at line %d\n",
-                                heavy, medium, lineNum);
-                    }
-
-                    if (light <= medium && medium <= heavy && light < heavy) {
-                        System.out.printf("???? Ascending %d, %d, %d at line %d\n",
-                                light, medium, heavy, lineNum);
-                    }
-
-                    if (light < medium && medium > heavy) {
-                        System.out.printf(">>>> Peak %d, %d, %d at line %d\n",
-                                light, medium, heavy, lineNum);
-                    }
-
-                    if (light > medium && medium < heavy) {
-                        System.out.printf("<<<< Valley at %d, %d, %d at line %d\n",
-                                light, medium, heavy, lineNum);
-                    }
-                }
-            }
-        }
-        finally {
-            reader.close();
-        }
-
-    }
-
-    private void peter() {
-        ArrayList<Entity> ha = new ArrayList();
-        ha.add(new Unit());
-
-    }
 }
 
 abstract class Entity {
-    public String name;
+    public String title;
 }
 
 class Unit extends Entity {
-
+    public String name;
+    public String strength;
+    public String primary;
+    public String secondary;
 }
 
 class Weapon extends Entity {
-
+    public String warhead;
 }
 
 class Warhead extends Entity {
-
+    public String verses;
 }
